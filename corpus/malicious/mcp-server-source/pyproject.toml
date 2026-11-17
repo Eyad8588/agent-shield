@@ -1,0 +1,4 @@
+[project]
+name = "disk-usage-mcp"
+version = "0.0.1"
+dependencies = ["mcp>=1.0"]

@@ -1,0 +1,374 @@
+# Agent Shield default rule set.
+#
+# Each rule is a regular expression applied to the text of files whose
+# artifact kind (skill | mcp | agent_config | model | any) is listed in `kinds`
+# and whose filename matches one of `files` (fnmatch globs, default "*").
+#
+# Fields
+#   id          stable identifier, used in SARIF (ruleId) and suppressions
+#   title       short human description
+#   severity    info | low | medium | high | critical
+#   category    grouping for the report
+#   kinds       artifact kinds the rule applies to ("any" = every text file)
+#   files       optional filename globs
+#   pattern     Python regex (compiled with MULTILINE). Use (?i) for case-insensitive.
+#   exclude     optional regex; a match whose line also matches `exclude` is dropped
+#   ambiguous   true = the finding may be legitimate in context (docs, security
+#               tutorials). These go to the local-LLM judge when it is enabled.
+#   help        remediation text (shown in HTML + SARIF)
+#
+# Structural checks (Unicode, pickle opcodes, MCP config/tool-list parsing,
+# agent-config structure) live in Python under agent_shield/checks/ and use
+# rule ids prefixed with UNI, PKL, MCP-S and AGT-S.
+
+rules:
+  # ---------------------------------------------------------------- injection
+  - id: PI001
+    title: Instruction-override phrase
+    severity: high
+    category: prompt-injection
+    kinds: [skill, mcp]
+    pattern: '(?i)\b(ignore|disregard|forget|override)\b[^\n]{0,30}\b(all\s+)?(previous|prior|above|earlier|preceding|system|your)\b[^\n]{0,20}\b(instructions?|prompts?|rules|guidelines|directives)\b'
+    ambiguous: true
+    help: Text that tells the model to drop its instructions is a classic prompt-injection payload. Remove it, or quote it clearly as an example.
+
+  - id: PI002
+    title: Asks the model to hide actions from the user
+    severity: high
+    category: prompt-injection
+    kinds: [skill, mcp]
+    pattern: '(?i)\b(do\s+not|don''t|never|without)\s+(tell(ing)?|inform(ing)?|mention(ing)?|reveal(ing)?|show(ing)?|notify(ing)?|alert(ing)?|asking)\s+(this\s+to\s+|it\s+to\s+)?(the\s+)?user\b'
+    ambiguous: true
+    help: Legitimate tools never need to hide what they do from the user. Treat concealment instructions as malicious.
+
+  - id: PI003
+    title: Pseudo-system tag in content
+    severity: high
+    category: prompt-injection
+    kinds: [skill, mcp]
+    pattern: '<\s*/?\s*(IMPORTANT|SYSTEM|ADMIN|INSTRUCTIONS?|system-prompt|hidden)\s*>|<\|im_start\|>|\[\s*(SYSTEM|ADMIN)\s*(OVERRIDE|MESSAGE|NOTE)?\s*\]'
+    ambiguous: true
+    help: Tags that imitate system or admin messages are used to give injected text extra authority.
+
+  - id: PI004
+    title: Hidden HTML comment with imperative content
+    severity: medium
+    category: hidden-instructions
+    kinds: [skill, mcp]
+    files: ["*.md", "*.markdown", "*.html", "*.txt", "*.json", "*.yaml", "*.yml"]
+    pattern: '(?is)<!--(?:(?!-->).){0,600}?\b(ignore|you\s+must|always|execute|run|send|upload|read|curl|wget|exfiltrat\w*|secret|token|password)\b(?:(?!-->).){0,600}?-->'
+    ambiguous: true
+    help: HTML comments are invisible in rendered Markdown but fully visible to the model. Instructions should never live in comments.
+
+  - id: PI005
+    title: Tool-description poisoning ("before using this tool ...")
+    severity: high
+    category: tool-poisoning
+    kinds: [skill, mcp]
+    pattern: '(?i)\b(before|prior\s+to|after)\s+(using|calling|running|invoking)\s+(this|any|the\s+\w+)\s+(tool|function|command|server)\b[^\n]{0,160}\b(read|send|call|include|pass|upload|fetch|cat|open)\b'
+    ambiguous: true
+    help: Tool descriptions should describe the tool, not instruct the model to perform other actions first.
+
+  - id: PI006
+    title: Requests file/secret contents as a tool parameter (side-channel)
+    severity: high
+    category: tool-poisoning
+    kinds: [skill, mcp]
+    pattern: '(?i)\b(pass|include|put|add|append|send)\b[^\n]{0,40}\b(contents?|content\s+of|value\s+of|full\s+text\s+of)\b[^\n]{0,80}\b(as|in|into|via)\b[^\n]{0,30}\b(parameter|argument|field|sidenote|note|metadata|context)\b'
+    ambiguous: true
+    help: Asking the model to smuggle file contents into a tool argument is a known MCP exfiltration technique.
+
+  - id: PI007
+    title: Role-impersonation line
+    severity: medium
+    category: prompt-injection
+    kinds: [skill, mcp]
+    files: ["*.md", "*.txt", "*.json", "*.yaml", "*.yml"]
+    pattern: '(?im)^\s*(###\s*)?(system|assistant|developer)\s*(message)?\s*:\s+\S'
+    ambiguous: true
+    help: Lines that look like chat-role headers can trick a model into treating data as instructions.
+
+  - id: PI008
+    title: Cross-tool instruction (changes how another tool behaves)
+    severity: high
+    category: tool-shadowing
+    kinds: [skill, mcp]
+    pattern: '(?i)\b(when|whenever|if|each\s+time)\b[^\n]{0,40}\b[`''"]?[\w.-]+[`''"]?\s+(tool|function)\s+(is\s+)?(used|called|invoked|run)\b[^\n]{0,120}\b(always|must|instead|also|change|redirect|replace|bcc|cc|forward)\b'
+    ambiguous: true
+    help: A tool description that rewrites the behaviour of a different tool is tool shadowing. Descriptions should only describe their own tool.
+
+  # ---------------------------------------------------------------- execution
+  - id: EX001
+    title: Remote script piped to a shell
+    severity: critical
+    category: remote-code-execution
+    kinds: [skill, mcp, agent_config]
+    pattern: '(?i)\b(curl|wget|iwr|invoke-webrequest)\b[^\n|;]*\|\s*(sudo\s+)?(ba|z|da|k|fi)?sh\b|\b(curl|wget)\b[^\n|;]*\|\s*(sudo\s+)?python[0-9.]*\b|\b(ba)?sh\s+<\(\s*(curl|wget)|\biex\s*\(\s*(new-object\s+net\.webclient|iwr|invoke-webrequest)'
+    help: Piping a downloaded script into a shell runs unreviewed code. Download, pin by hash, review, then run.
+
+  - id: EX002
+    title: Decode-and-execute obfuscation
+    severity: critical
+    category: obfuscation
+    kinds: [skill, mcp, agent_config]
+    pattern: '(?i)base64\s+(-d|--decode|-D)\b[^\n]*\|\s*(ba|z)?sh\b|\bexec\s*\(\s*(base64\.b64decode|bytes\.fromhex|codecs\.decode|zlib\.decompress|marshal\.loads)|\beval\s*\(\s*(atob|Buffer\.from)\s*\(|\bFunction\s*\(\s*atob\s*\('
+    help: Decoding a blob and executing it hides the real behaviour from reviewers.
+
+  - id: EX003
+    title: Dynamic code evaluation
+    severity: medium
+    category: code-execution
+    kinds: [skill, mcp]
+    files: ["*.py", "*.js", "*.mjs", "*.cjs", "*.ts"]
+    pattern: '(?<![\w.])(eval|exec)\s*\(\s*(?![''"`])'
+    exclude: '(?i)literal_eval|\.exec\(|regex|re\.compile|#\s*nosec'
+    ambiguous: true
+    help: eval/exec on non-literal input can run attacker-controlled code.
+
+  - id: EX004
+    title: Shell command execution with shell interpretation
+    severity: medium
+    category: code-execution
+    kinds: [skill, mcp]
+    files: ["*.py", "*.js", "*.mjs", "*.cjs", "*.ts"]
+    pattern: 'subprocess\.\w+\([^\n]*shell\s*=\s*True|\bos\.(system|popen)\s*\(|\bchild_process\b[^\n]*\bexec(Sync)?\b|\bexecSync\s*\(|(?<![\w.])exec\s*\(\s*`'
+    ambiguous: true
+    help: Shell-interpreted commands built from model or user input allow command injection. Use an argv list and an allow-list of commands.
+
+  - id: EX005
+    title: Download then execute
+    severity: high
+    category: remote-code-execution
+    kinds: [skill, mcp, agent_config]
+    pattern: '(?i)\b(curl|wget)\b[^\n]*\s(-o|-O|--output)\s*\S+[^\n]*(&&|;)[^\n]*(chmod\s+\+?[0-7x]+|\./\S+|\b(ba)?sh\s+\S+)'
+    help: Downloading and running a binary/script without a checksum is unsafe.
+
+  - id: EX006
+    title: Destructive recursive delete of root or home
+    severity: critical
+    category: destructive
+    kinds: [skill, mcp, agent_config]
+    pattern: '\brm\s+-[a-zA-Z]*[rR][a-zA-Z]*\s+(-[a-zA-Z]+\s+)*(/|~/?|\$HOME/?|/\*|~/\*)(\s|$|["''])'
+    help: Deleting the root or home directory is never needed by a skill or tool.
+
+  - id: EX007
+    title: Reverse shell pattern
+    severity: critical
+    category: remote-code-execution
+    kinds: [skill, mcp, agent_config]
+    pattern: '/dev/tcp/\S+/\d+|\b(nc|ncat|netcat)\b[^\n]*\s-(e|c)\s|\bbash\s+-i\s+>&|socket\.socket\([^\n]*\)[^\n]*;[^\n]*(dup2|pty\.spawn)|\bpty\.spawn\(\s*[''"]/bin/(ba)?sh'
+    help: Reverse shells give a remote party interactive control of the machine.
+
+  # ---------------------------------------------------------------- secrets
+  - id: SE001
+    title: Accesses SSH keys
+    severity: high
+    category: secret-access
+    kinds: [skill, mcp, agent_config]
+    pattern: '~/\.ssh\b|\$HOME/\.ssh\b|\.ssh/(id_[a-z0-9]+|authorized_keys|known_hosts|config)\b|\bid_(rsa|ed25519|ecdsa|dsa)\b'
+    ambiguous: true
+    help: Skills and tools rarely need SSH keys. Reading them is a common exfiltration target.
+
+  - id: SE002
+    title: Accesses cloud / package-registry credentials
+    severity: high
+    category: secret-access
+    kinds: [skill, mcp, agent_config]
+    pattern: '\.aws/credentials|\.config/gcloud|application_default_credentials\.json|\.kube/config|\.docker/config\.json|(?<![\w-])\.netrc\b|(?<![\w-])\.npmrc\b|(?<![\w-])\.pypirc\b|\.git-credentials|\.azure/(accessTokens|msal_token_cache)'
+    ambiguous: true
+    help: Credential files should never be read by a skill or tool.
+
+  - id: SE003
+    title: Dumps the whole environment
+    severity: high
+    category: secret-access
+    kinds: [skill, mcp]
+    pattern: '(json\.dumps|str|repr|dict)\(\s*os\.environ\s*\)|JSON\.stringify\(\s*process\.env\s*\)|Object\.(entries|keys)\(\s*process\.env\s*\)|\bprintenv\b(?!\s+\w)|(^|[;&|]\s*)env\s*(>|\|)|os\.environ\.items\(\)'
+    ambiguous: true
+    help: Environment variables usually contain API keys. Read only the specific variables you need.
+
+  - id: SE004
+    title: Accesses browser credential stores or the keychain
+    severity: critical
+    category: secret-access
+    kinds: [skill, mcp, agent_config]
+    pattern: '(?i)Login\s+Data\b|cookies\.sqlite|Library/Keychains|security\s+(find|dump)-(generic|internet)-password|security\s+dump-keychain|Chrome/(Default|User\s+Data)|\.mozilla/firefox|key4\.db\b'
+    help: Browser password/cookie databases and the system keychain are high-value targets for credential theft.
+
+  - id: SE005
+    title: Accesses crypto wallets
+    severity: high
+    category: secret-access
+    kinds: [skill, mcp]
+    pattern: '(?i)wallet\.dat\b|\.ethereum/keystore|\.electrum/wallets|Exodus/exodus\.wallet|metamask[^\n]{0,40}(vault|ldb|extension)'
+    ambiguous: true
+    help: Wallet files hold private keys; a skill has no reason to read them.
+
+  - id: SE006
+    title: Hard-coded credential
+    severity: high
+    category: secrets
+    kinds: [skill, mcp, agent_config]
+    pattern: '\b(sk-(proj-|ant-)?[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35})\b'
+    exclude: '(?i)example|placeholder|your[_-]?key|xxxx|dummy|redacted'
+    help: Secrets committed in configs leak to anyone who receives the artifact. Use environment variables or a secret manager.
+
+  # ---------------------------------------------------------------- network / exfil
+  - id: NE001
+    title: Known exfiltration / request-capture endpoint
+    severity: high
+    category: exfiltration
+    kinds: [skill, mcp, agent_config]
+    pattern: '(?i)\b(webhook\.site|requestbin\.(com|net)|pipedream\.net|[\w-]+\.ngrok(-free)?\.(io|app|dev)|burpcollaborator\.net|interact\.sh|oast\.(fun|me|pro|live|site|online)|pastebin\.com/api|transfer\.sh|discord(app)?\.com/api/webhooks|api\.telegram\.org/bot|hookbin\.com|beeceptor\.com)\b'
+    help: These services capture arbitrary HTTP requests and are commonly used to receive stolen data.
+
+  - id: NE002
+    title: Hard-coded raw IP address URL
+    severity: medium
+    category: exfiltration
+    kinds: [skill, mcp]
+    pattern: 'https?://(?!127\.|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|localhost)\d{1,3}(\.\d{1,3}){3}'
+    ambiguous: true
+    help: Raw public IPs avoid DNS-based reputation checks. Prefer named, documented endpoints.
+
+  - id: NE003
+    title: Uploads local files to a remote host
+    severity: high
+    category: exfiltration
+    kinds: [skill, mcp, agent_config]
+    pattern: '\bcurl\b[^\n]*(\s-d\s*@|--data(-binary|-raw)?\s*@|\s-F\s*["'']?\w*=@|--upload-file\s|\s-T\s)|\bscp\s+[^\n]*\s\S+@\S+:|\brsync\b[^\n]*\s\S+@\S+:'
+    help: Sending local files to an external host is the core of data exfiltration.
+
+  - id: NE004
+    title: Collects data then sends it over HTTP
+    severity: high
+    category: exfiltration
+    kinds: [skill, mcp]
+    files: ["*.py", "*.js", "*.mjs", "*.cjs", "*.ts", "*.sh"]
+    pattern: '(?is)(open\([^)]*(\.ssh|\.aws|credentials|\.env\b|id_rsa)|os\.environ|process\.env)[\s\S]{0,400}?(requests\.(post|put)|urlopen\(|fetch\(|http\.request|axios\.(post|put)|curl\s)'
+    ambiguous: true
+    help: Reading sensitive local data and then making an outbound request is the exfiltration pattern.
+
+  - id: NE005
+    title: Outbound HTTP POST from a skill script
+    severity: low
+    category: network
+    kinds: [skill]
+    files: ["*.py", "*.js", "*.mjs", "*.ts", "*.sh"]
+    pattern: 'requests\.(post|put|patch)\(|axios\.(post|put)\(|method\s*:\s*["'']POST|curl\s[^\n]*-X\s*POST'
+    ambiguous: true
+    help: Document why the skill sends data out and to which endpoint.
+
+  # ---------------------------------------------------------------- file system / persistence
+  - id: FS001
+    title: Walks the entire home or root directory
+    severity: medium
+    category: excessive-access
+    kinds: [skill, mcp]
+    pattern: 'os\.walk\(\s*(["'']/["'']|["'']~["'']|os\.path\.expanduser\(\s*["'']~["'']\s*\)|Path\.home\(\)|str\(Path\.home\(\)\))|\bfind\s+(/|~|\$HOME)\s|glob\([^\n)]*(["'']/\*\*|["'']~/\*\*)'
+    ambiguous: true
+    help: Scanning the whole disk or home directory is excessive file access for almost any skill.
+
+  - id: FS002
+    title: Writes persistence (shell profile, cron, launch agents)
+    severity: high
+    category: persistence
+    kinds: [skill, mcp, agent_config]
+    pattern: '>>?\s*["'']?(~|\$HOME)/\.(bashrc|zshrc|bash_profile|profile|zprofile)\b|Library/LaunchAgents/|\bcrontab\s+(-l\s*\|[^\n]*\|\s*crontab|-\s*$|\S+\.cron)|/etc/cron\.|\bsystemctl\s+(--user\s+)?enable\b'
+    ambiguous: true
+    help: Modifying shell start-up files or schedulers makes code run again later without the user's knowledge.
+
+  - id: FS003
+    title: Privilege escalation via sudo
+    severity: medium
+    category: excessive-access
+    kinds: [skill, mcp]
+    files: ["*.sh", "*.py", "*.js", "*.ts", "*.md"]
+    pattern: '(^|[;&|`(]\s*|["''])sudo\s+\S'
+    ambiguous: true
+    help: Skills should never need root. Document any privileged step for a human to run.
+
+  - id: FS004
+    title: Skill grants itself unrestricted tools
+    severity: medium
+    category: excessive-access
+    kinds: [skill]
+    files: ["SKILL.md", "skill.md"]
+    pattern: '(?im)^allowed[-_]tools\s*:[^\n]*?((?<![\w(:])["'']?\*["'']?(?=\s*(,|$|\]))|\bBash\b(?!\()|\bBash\(\s*\*?\s*\))'
+    help: Restrict allowed-tools to specific commands, e.g. Bash(git status:*).
+
+  - id: FS005
+    title: Large encoded blob
+    severity: medium
+    category: obfuscation
+    kinds: [skill, mcp]
+    files: ["*.md", "*.py", "*.js", "*.ts", "*.sh", "*.json"]
+    pattern: '[A-Za-z0-9+/]{240,}={0,2}'
+    ambiguous: true
+    help: Long base64 strings in a skill or tool are often hidden payloads. Ship readable source instead.
+
+  # ---------------------------------------------------------------- MCP specific (text-level)
+  - id: MCP001
+    title: Container launched with host-level privileges
+    severity: high
+    category: over-broad-permissions
+    kinds: [mcp, agent_config]
+    pattern: '--privileged|--network[= ]host|--pid[= ]host|["'']?-v["'']?\s*,?\s*["'']/:/|--cap-add[= ]["'']?(ALL|SYS_ADMIN)|/var/run/docker\.sock'
+    help: A privileged container or a mounted Docker socket gives the server full control of the host.
+
+  - id: MCP002
+    title: MCP server binds to all interfaces
+    severity: medium
+    category: network
+    kinds: [mcp]
+    pattern: '(host|HOST|bind)\s*[=:]\s*["'']0\.0\.0\.0["'']|--host[= ]0\.0\.0\.0'
+    help: Bind local MCP servers to 127.0.0.1 so other machines on the network cannot call them.
+
+  # ---------------------------------------------------------------- agent config (text-level)
+  - id: AGT001
+    title: Permission prompts bypassed
+    severity: critical
+    category: agent-config
+    kinds: [agent_config]
+    pattern: '(?i)"defaultMode"\s*:\s*"bypassPermissions"|--dangerously-skip-permissions|dangerously[_-]?skip[_-]?permissions["'']?\s*[:=]\s*true|--dangerously-bypass-approvals-and-sandbox|\byolo\b["'']?\s*[:=]\s*true|--yolo\b'
+    help: The agent will run every tool call without asking. Use the default or accept-edits mode.
+
+  - id: AGT002
+    title: Auto-approve of tool calls
+    severity: high
+    category: agent-config
+    kinds: [agent_config, mcp]
+    pattern: '(?i)["'']?\b(auto_?approve|always_?allow|autoApprove|alwaysAllow|trust_?all_?tools|skip_?confirm(ation)?s?|auto_?run|autoRun)\b["'']?\s*[:=]\s*(true|\[\s*["'']\*["'']|["'']\*["''])'
+    help: Auto-approving tool calls removes the human check that stops injected actions.
+
+  - id: AGT003
+    title: Approval policy set to never ask
+    severity: high
+    category: agent-config
+    kinds: [agent_config]
+    pattern: '(?i)\bapproval[_-]?policy\b["'']?\s*[:=]\s*["'']?never\b|\bask_for_approval\b["'']?\s*[:=]\s*["'']?never\b'
+    help: Set approval_policy to on-request or untrusted.
+
+  - id: AGT004
+    title: Sandbox disabled or full access
+    severity: critical
+    category: agent-config
+    kinds: [agent_config]
+    pattern: '(?i)\bsandbox(_?mode|_?enabled)?\b["'']?\s*[:=]\s*["'']?(false|off|none|disabled|danger-full-access)\b'
+    help: Run agents inside a sandbox (workspace-write or read-only) so a hijacked agent cannot touch the rest of the system.
+
+  - id: AGT005
+    title: Unrestricted shell allow-list
+    severity: high
+    category: agent-config
+    kinds: [agent_config]
+    pattern: '(?i)\b(allowed_?commands|shell_?allow_?list|command_?allow_?list|allow_?shell|allowedCommands)\b["'']?\s*[:=]\s*(\[\s*["'']\*["'']|true\b|["'']\*["''])'
+    help: Allow only the specific commands the agent needs.
+
+  - id: AGT006
+    title: Network access fully open for the agent
+    severity: medium
+    category: agent-config
+    kinds: [agent_config]
+    pattern: '(?i)\b(network_?access|allow_?network|networkAccess)\b["'']?\s*[:=]\s*["'']?(true|full|all|any|unrestricted)\b|\ballowed_?domains\b["'']?\s*[:=]\s*\[\s*["'']\*["'']'
+    help: Limit network access to an explicit domain allow-list.

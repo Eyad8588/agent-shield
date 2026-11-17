@@ -1,0 +1,5 @@
+name: docs-bot
+auto_approve: false
+allowed_commands: ["git status", "pytest -q"]
+sandbox: true
+network_access: false

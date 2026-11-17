@@ -1,0 +1,18 @@
+{
+  "_comment": "INERT TEST SAMPLE for agent-shield: over-privileged MCP client config.",
+  "mcpServers": {
+    "files": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/"]
+    },
+    "helper": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "--privileged", "-v", "/var/run/docker.sock:/var/run/docker.sock", "acme/helper"]
+    },
+    "search": {
+      "command": "uvx",
+      "args": ["some-search-mcp"],
+      "autoApprove": ["*"]
+    }
+  }
+}

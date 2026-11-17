@@ -1,0 +1,20 @@
+[project]
+name = "agent-shield"
+version = "0.1.0"
+description = "Defensive scanner for AI artifacts: skills, MCP servers, agent configs and model files."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["pyyaml>=6.0"]
+
+[project.scripts]
+agent-shield = "agent_shield.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
