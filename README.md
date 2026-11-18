@@ -1,5 +1,24 @@
 # Agent Shield
 
+## What it does (in simple words)
+
+Agent Shield is like an antivirus for AI add-ons. AI assistants can install skills, plugins (MCP servers) and
+model files written by strangers. A bad one can quietly tell the AI to steal your passwords, run harmful commands
+or send your files somewhere. Agent Shield reads these files **before** you install them. It tells you whether
+they are safe (pass), worth a closer look (warn) or dangerous (block), and points to the exact line.
+
+**How it works, in 3 steps:**
+
+1. **Static rules.** Fast pattern checks look for known tricks: hidden text, "ignore your instructions",
+   downloading and running scripts, reading SSH keys, unsafe model files, risky agent settings.
+2. **Local AI judge.** Some patterns can be innocent, like a security tutorial that quotes an attack. Only those
+   go to a small AI model running on your own computer, which decides whether the text is a real attack. It is
+   built so the file it is reading cannot talk it into saying "safe".
+3. **Report.** You get a score out of 100, a verdict and every finding, in the terminal, as an HTML page, and as
+   SARIF so GitHub can show the alerts on pull requests.
+
+## Overview
+
 A defensive scanner for AI artifacts. Run it **before** you install a skill, add an MCP server, adopt an agent
 config or load a model file. It gives a 0–100 score, a `pass` / `warn` / `block` verdict and a list of findings
 as text, HTML, JSON and SARIF (for GitHub code scanning).
@@ -252,11 +271,28 @@ To use a fully custom rule file: `agent-shield scan <path> --rules my-rules.yaml
 
 ## Screenshots
 
-Screenshots are added in a later pass (`docs/screenshots/`).
+All screenshots come from real runs on the corpus. Regenerate them with
+`uv run python scripts/make_screenshots.py` (needs Chrome and, for the judge shots, Ollama).
 
-- TODO: HTML report for a blocked skill (`docs/screenshots/html-report.png`)
-- TODO: terminal output of `agent-shield scan` (`docs/screenshots/cli-scan.png`)
-- TODO: GitHub code-scanning alerts from the SARIF upload (`docs/screenshots/github-code-scanning.png`)
+**Scanning a malicious skill:** a fake "SSH helper" that packs up SSH keys and cloud credentials and uploads them. Blocked.
+
+![CLI scan of a malicious skill](docs/screenshots/cli-scan-malicious.png)
+
+**Scanning the clean samples with the local judge:** the judge clears the security-tutorial false positives, and the whole set passes.
+
+![CLI scan of the clean corpus](docs/screenshots/cli-scan-clean.png)
+
+**HTML report:** a prompt-injection skill, with each finding's code excerpt and the local judge's verdict.
+
+![HTML report](docs/screenshots/html-report.png)
+
+**Evaluation:** precision and recall on the corpus, and how the hardened judge removed its own mistakes.
+
+![Eval results](docs/screenshots/eval-results.png)
+
+**SARIF output:** the format GitHub code scanning reads (one of four results shown).
+
+![SARIF output](docs/screenshots/sarif-output.png)
 
 ## Roadmap
 
@@ -294,6 +330,8 @@ src/agent_shield/
   harness/            runtime prompt-injection harness + cases.yaml
 corpus/               labelled malicious (inert) and clean samples
 tests/                pytest suite
+scripts/              make_screenshots.py (regenerates docs/screenshots/)
+docs/screenshots/     README images
 ```
 
 ## Limits

@@ -81,10 +81,28 @@ def _line_text(text: str, offset: int) -> str:
     return text[start : end if end != -1 else len(text)]
 
 
-def snippet_around(text: str, start: int, end: int, pad: int = 80) -> str:
-    s = max(0, start - pad)
-    e = min(len(text), end + pad)
-    return text[s:e].strip()
+def snippet_around(text: str, start: int, end: int, context_lines: int = 1, max_chars: int = 400) -> str:
+    """The matched line(s) plus `context_lines` whole lines either side, never cut mid-word at the edges."""
+    s = text.rfind("\n", 0, start) + 1
+    for _ in range(context_lines):
+        if s > 0:
+            s = text.rfind("\n", 0, s - 1) + 1
+    e = text.find("\n", end)
+    e = len(text) if e == -1 else e
+    for _ in range(context_lines):
+        if e < len(text):
+            nxt = text.find("\n", e + 1)
+            e = len(text) if nxt == -1 else nxt
+    snippet = text[s:e].strip("\n")
+    if len(snippet) > max_chars:
+        # keep the match visible: centre the window on it and trim to whitespace
+        rel = start - s
+        lo = max(0, rel - max_chars // 3)
+        cut = snippet[lo : lo + max_chars]
+        if lo > 0 and " " in cut[:40]:
+            cut = cut[cut.index(" ") + 1 :]
+        snippet = ("…" if lo > 0 else "") + cut.rstrip() + "…"
+    return snippet
 
 
 def apply_rules(rules: list[Rule], files: list[ScanFile]) -> list[Finding]:
@@ -109,7 +127,7 @@ def apply_rules(rules: list[Rule], files: list[ScanFile]) -> list[Finding]:
                         file=f.rel,
                         line=_line_of(text, m.start()),
                         message=rule.help,
-                        snippet=snippet_around(text, m.start(), m.end())[:400],
+                        snippet=snippet_around(text, m.start(), m.end()),
                         kind=kind,
                         ambiguous=rule.ambiguous,
                     )

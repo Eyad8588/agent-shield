@@ -78,7 +78,7 @@ def to_html(result: ScanResult) -> str:
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <title>Agent Shield report</title><style>{_CSS}</style></head><body><main>
 <h1>Agent Shield report</h1>
-<div class="sub">{_e(result.root)} &middot; {result.files_scanned} files &middot; kinds: {_e(", ".join(result.kinds) or "none")}
+<div class="sub">{_e(result.root)} &middot; {result.files_scanned} file{"s" if result.files_scanned != 1 else ""} &middot; kinds: {_e(", ".join(result.kinds) or "none")}
 &middot; LLM judge: {"on" if result.judge_used else "off"} &middot; {now} &middot; v{__version__}</div>
 <div class="top">
  <div class="card"><div class="score">{result.score}</div><div class="msg">score / 100</div>
