@@ -74,6 +74,21 @@ uv run agent-shield eval --judge --ablation      # precision/recall on the corpu
 uv run agent-shield harness --agent ollama       # runtime prompt-injection test -> reports/harness-*.md/.jsonl
 ```
 
+### Web GUI
+
+Prefer a browser? Start a local page where you can drop a skill folder, MCP config, agent config, model file
+or `.zip`, toggle the local LLM judge, and download the HTML, SARIF and JSON reports:
+
+```bash
+uv run agent-shield gui            # opens http://127.0.0.1:8765/
+```
+
+It binds to `127.0.0.1` only and uses the standard library (no extra dependencies). Uploads are written to a
+temporary folder, scanned and deleted; nothing uploaded is executed or deserialized. Upload paths (including
+inside zips) cannot escape that folder, zip symlinks are skipped, requests with another `Host` or a cross-site
+`Origin` are refused, and the page renders scanned text as plain text only. In a repo checkout it also offers
+the inert corpus samples as one-click scans.
+
 ### Verdict and exit codes
 
 | Verdict | When | Exit code (default `--fail-on block`) |
