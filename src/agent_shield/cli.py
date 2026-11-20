@@ -101,6 +101,12 @@ def cmd_harness(args) -> int:
                        limit=args.limit)
 
 
+def cmd_gui(args) -> int:
+    from .web import serve
+
+    return serve(port=args.port, open_browser=not args.no_open)
+
+
 def build_parser() -> argparse.ArgumentParser:
     from .judge import DEFAULT_MODEL
 
@@ -143,6 +149,11 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("--limit", type=int, default=0)
     h.add_argument("--no-sandbox", action="store_true", help="do not wrap cmd: agents in sandbox-exec")
     h.set_defaults(func=cmd_harness)
+
+    g = sub.add_parser("gui", help="open a local web page to upload and scan skills, MCP servers and models")
+    g.add_argument("--port", type=int, default=8765, help="port on 127.0.0.1 (default 8765; 0 picks a free one)")
+    g.add_argument("--no-open", action="store_true", help="do not open the browser")
+    g.set_defaults(func=cmd_gui)
     return p
 
 

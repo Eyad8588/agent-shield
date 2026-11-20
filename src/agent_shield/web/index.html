@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Shield</title>
+<style>
+:root{
+  --bg:#f6f7f9;--card:#fff;--fg:#17191e;--muted:#5d6370;--line:#e2e5ea;--soft:#eef0f4;
+  --accent:#3b5bdb;--accent-fg:#fff;--accent-soft:#e8edff;
+  --crit:#b3261e;--high:#d9480f;--med:#a8670a;--low:#2f6fb3;--info:#6b7280;--ok:#1f7a4d;
+  --radius:12px;--shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1013;--card:#17191e;--fg:#e8e9ec;--muted:#9aa0aa;--line:#2a2d34;--soft:#1f2228;
+  --accent:#7c93ff;--accent-fg:#0f1013;--accent-soft:#1d2440;
+  --crit:#ff6b62;--high:#ff8a4c;--med:#f2c14e;--low:#6fa8ff;--info:#9aa0aa;--ok:#4ccf8f;
+  --shadow:none;
+}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--fg)}
+body{font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif}
+button,select,input{font:inherit;color:inherit}
+.app{max-width:1180px;margin:0 auto;padding:28px 16px 64px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.logo{width:42px;height:42px;border-radius:11px;background:var(--accent);color:var(--accent-fg);
+  display:grid;place-items:center;flex:none}
+h1{font-size:22px;margin:0;letter-spacing:-.01em}
+.tag{color:var(--muted);font-size:14px;margin:2px 0 0}
+.grid{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+.card+.card{margin-top:18px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px;font-weight:600}
+.drop{border:1.5px dashed var(--line);border-radius:10px;padding:26px 14px;text-align:center;
+  background:var(--soft);transition:border-color .15s,background .15s;cursor:pointer}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop b{display:block;font-size:15px;margin-bottom:4px}
+.drop span{color:var(--muted);font-size:13px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 12px;cursor:pointer;
+  font-size:14px;display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:var(--fg)}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:600}
+.btn.primary:disabled{opacity:.45;cursor:not-allowed}
+.btn.full{width:100%;justify-content:center;padding:10px}
+.btn.small{padding:4px 9px;font-size:13px}
+.files{list-style:none;margin:12px 0 0;padding:0;max-height:190px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.files:empty{display:none}
+.files li{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;font-size:13px;border-top:1px solid var(--line)}
+.files li:first-child{border-top:0}
+.files code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.files .x{border:0;background:none;color:var(--muted);cursor:pointer;padding:0 2px}
+.meta{color:var(--muted);font-size:13px;margin-top:8px;min-height:1.2em}
+.judge{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.judge label{display:flex;gap:8px;align-items:flex-start;font-size:14px;cursor:pointer}
+.judge input{margin-top:3px}
+.judge select{margin-top:8px;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--info)}
+.dot.on{background:var(--ok)}
+.hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:3px 10px;font-size:12.5px;cursor:pointer}
+.chip:hover{border-color:var(--accent)}
+.chip.mal::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--crit);margin-right:6px;vertical-align:middle}
+.chip.cln::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:6px;vertical-align:middle}
+.group{font-size:12px;color:var(--muted);margin:10px 0 6px}
+.empty{text-align:center;color:var(--muted);padding:56px 16px}
+.empty svg{opacity:.5;margin-bottom:10px}
+.summary{display:flex;gap:16px;flex-wrap:wrap;align-items:stretch}
+.score{min-width:150px}
+.score .n{font-size:46px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.score .of{color:var(--muted);font-size:13px}
+.verdict{display:inline-block;margin-top:8px;font-weight:700;font-size:12.5px;letter-spacing:.06em;
+  text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1.5px solid currentColor}
+.v-block{color:var(--crit)}.v-warn{color:var(--med)}.v-pass{color:var(--ok)}
+.facts{flex:1;min-width:240px}
+.facts .label{font-size:15px;font-weight:600;word-break:break-all}
+.facts .sub{color:var(--muted);font-size:13px;margin:2px 0 10px}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.pill{border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;border:1px solid currentColor;white-space:nowrap;
+  background:transparent;cursor:pointer}
+.pill.active{background:currentColor}
+.pill.active span{color:var(--card)}
+.s-critical{color:var(--crit)}.s-high{color:var(--high)}.s-medium{color:var(--med)}.s-low{color:var(--low)}.s-info{color:var(--info)}
+.errors{margin:10px 0 0;padding-left:18px;color:var(--med);font-size:13px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+.finding{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:10px}
+.finding .top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.finding .title{font-weight:600}
+.finding .loc{margin-left:auto;color:var(--muted);font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+.finding .msg{color:var(--muted);font-size:13.5px;margin-top:4px}
+.finding .rule{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}
+.finding pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);border:1px solid var(--line);
+  border-radius:8px;padding:8px 10px;margin:8px 0 0;max-height:200px;overflow:auto;font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
+.finding .jv{font-size:13px;margin-top:8px;padding:6px 10px;border-radius:8px;background:var(--accent-soft)}
+.history{list-style:none;margin:0;padding:0}
+.history li{display:flex;align-items:center;gap:10px;padding:8px 4px;border-top:1px solid var(--line);cursor:pointer;font-size:13.5px}
+.history li:first-child{border-top:0}
+.history li:hover{background:var(--soft)}
+.history .h-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.history .h-time{color:var(--muted);font-size:12px}
+.spinner{width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;
+  animation:spin .8s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--fg);color:var(--bg);
+  padding:9px 14px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
+.toast.show{opacity:1}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+footer{color:var(--muted);font-size:12.5px;margin-top:22px;text-align:center}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.8-7 9-4-1.2-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+    </div>
+    <div>
+      <h1>Agent Shield</h1>
+      <p class="tag">Scan AI skills, MCP servers, agent configs and model files before you install them. Nothing you upload is executed.</p>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div>
+      <section class="card" aria-labelledby="up-h">
+        <h2 id="up-h">Upload</h2>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Drop files or folders, or press to choose files">
+          <b>Drop a skill folder, MCP config or model file</b>
+          <span>Folders, single files and .zip archives all work</span>
+        </div>
+        <div class="row">
+          <button class="btn" id="pick-files" type="button">Choose files</button>
+          <button class="btn" id="pick-folder" type="button">Choose folder</button>
+          <button class="btn" id="clear" type="button" hidden>Clear</button>
+        </div>
+        <input type="file" id="in-files" class="sr" multiple>
+        <input type="file" id="in-folder" class="sr" webkitdirectory multiple>
+        <ul class="files" id="files"></ul>
+        <div class="meta" id="meta"></div>
+
+        <div class="judge">
+          <label><input type="checkbox" id="judge"> <span>Ask the local AI judge about ambiguous findings
+            <span class="hint" id="judge-status" style="display:block"></span></span></label>
+          <select id="model" aria-label="Judge model" hidden></select>
+        </div>
+        <div style="margin-top:16px">
+          <button class="btn primary full" id="scan" type="button" disabled>Scan</button>
+        </div>
+      </section>
+
+      <section class="card" id="samples-card" hidden aria-labelledby="sm-h">
+        <h2 id="sm-h">Try a sample</h2>
+        <div class="hint" style="margin-top:-6px">Inert test samples from the project's corpus.</div>
+        <div id="samples"></div>
+      </section>
+
+      <section class="card" aria-labelledby="hi-h">
+        <h2 id="hi-h">This session</h2>
+        <ul class="history" id="history"></ul>
+        <div class="hint" id="history-empty">Scans you run appear here.</div>
+      </section>
+    </div>
+
+    <section class="card" id="result" aria-live="polite">
+      <div class="empty" id="empty">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.8-7 9-4-1.2-7-4.5-7-9V6l7-3z"/></svg>
+        <div>Upload something or pick a sample to see its score, verdict and findings.</div>
+      </div>
+      <div id="out" hidden>
+        <div class="summary">
+          <div class="card score"><div class="n" id="r-score">–</div><div class="of">score / 100</div><div class="verdict" id="r-verdict"></div></div>
+          <div class="card facts">
+            <div class="label" id="r-label"></div>
+            <div class="sub" id="r-sub"></div>
+            <div class="pills" id="r-pills"></div>
+            <ul class="errors" id="r-errors"></ul>
+          </div>
+        </div>
+        <div class="actions">
+          <a class="btn" id="a-html" target="_blank" rel="noopener">Open full report</a>
+          <a class="btn" id="a-sarif">Download SARIF</a>
+          <a class="btn" id="a-json">Download JSON</a>
+        </div>
+        <h2 id="r-count"></h2>
+        <div id="r-findings"></div>
+      </div>
+    </section>
+  </div>
+  <footer id="foot"></footer>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<script src="/app.js"></script>
+</body>
+</html>
